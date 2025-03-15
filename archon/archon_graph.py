@@ -22,7 +22,7 @@ from pydantic_ai.messages import (
 # Add the parent directory to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from archon.pydantic_ai_coder import pydantic_ai_coder, PydanticAIDeps, list_documentation_pages_helper
-from utils.utils import get_env_var
+from utils.utils import get_env_var, get_clients
 
 # Load environment variables
 load_dotenv()
@@ -30,12 +30,12 @@ load_dotenv()
 # Configure logfire to suppress warnings (optional)
 logfire.configure(send_to_logfire='never')
 
+provider = get_env_var('LLM_PROVIDER') or 'OpenAI'
 base_url = get_env_var('BASE_URL') or 'https://api.openai.com/v1'
 api_key = get_env_var('LLM_API_KEY') or 'no-llm-api-key-provided'
 
-is_ollama = "localhost" in base_url.lower()
-is_anthropic = "anthropic" in base_url.lower()
-is_openai = "openai" in base_url.lower()
+is_anthropic = provider == "Anthropic"
+is_openai = provider == "OpenAI"
 
 reasoner_llm_model_name = get_env_var('REASONER_MODEL') or 'o3-mini'
 reasoner_llm_model = AnthropicModel(reasoner_llm_model_name, api_key=api_key) if is_anthropic else OpenAIModel(reasoner_llm_model_name, base_url=base_url, api_key=api_key)
@@ -58,22 +58,8 @@ end_conversation_agent = Agent(
     system_prompt='Your job is to end a conversation for creating an AI agent by giving instructions for how to execute the agent and they saying a nice goodbye to the user.',  
 )
 
-openai_client=None
-
-if is_ollama:
-    openai_client = AsyncOpenAI(base_url=base_url,api_key=api_key)
-elif get_env_var("OPENAI_API_KEY"):
-    openai_client = AsyncOpenAI(api_key=get_env_var("OPENAI_API_KEY"))
-else:
-    openai_client = None
-
-if get_env_var("SUPABASE_URL"):
-    supabase: Client = Client(
-        get_env_var("SUPABASE_URL"),
-        get_env_var("SUPABASE_SERVICE_KEY")
-    )
-else:
-    supabase = None
+# Initialize clients
+embedding_client, supabase = get_clients()
 
 # Define state schema
 class AgentState(TypedDict):
@@ -123,7 +109,7 @@ async def coder_agent(state: AgentState, writer):
     # Prepare dependencies
     deps = PydanticAIDeps(
         supabase=supabase,
-        openai_client=openai_client,
+        embedding_client=embedding_client,
         reasoner_output=state['scope']
     )
 
